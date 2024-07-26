@@ -28,7 +28,7 @@
                     return Controller.extend("PreviewController", {
                         onInit: function () {
 
-                            const data = {"Services":[{"ServiceName":"riskmanagementService","DetailsURL":"/service/riskmanagementService/","Metadata":"/service/riskmanagementService/$metadata","Entities":[{"Name":"Risks","URL":"/service/riskmanagementService/Risks","FioriURL":""},{"Name":"Mitigation","URL":"/service/riskmanagementService/Mitigation","FioriURL":""},{"Name":"A_BusinessPartner","URL":"/service/riskmanagementService/A_BusinessPartner","FioriURL":""}],"EntitiesCount":3}]}
+                            const data = {"Services":[{"ServiceName":"riskmanagementService","DetailsURL":"./service/riskmanagementService/","Metadata":"./service/riskmanagementService/$metadata","Entities":[{"Name":"Risks","URL":"./service/riskmanagementService/Risks","FioriURL":""},{"Name":"Mitigation","URL":"./service/riskmanagementService/Mitigation","FioriURL":""},{"Name":"A_BusinessPartner","URL":"./service/riskmanagementService/A_BusinessPartner","FioriURL":""}],"EntitiesCount":3}]}
                             this.getView().setModel(new JSONModel(data));
                         }
                     });

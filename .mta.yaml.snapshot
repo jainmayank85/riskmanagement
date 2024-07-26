@@ -1,0 +1,180 @@
+_schema-version: '3.1'
+ID: riskmanagement
+version: 1.0.0
+description: A simple CAP project.
+parameters:
+  deploy_mode: html5-repo
+  enable-parallel-deployments: true
+build-parameters:
+  before-all:
+    - builder: custom
+      commands:
+        - rm -rf build/dist
+        - mkdir -p build/dist
+        - bash -c "cd mtx/sidecar && npm install && cd ../.."
+    - builder: custom
+      commands:
+        - npm install --production
+        - >-
+          bash -c "cds -v | grep 'cds-dk' || npm i --production --no-save
+          @sap/cds-dk @sap/mdk-tools"
+        - bash -c "export PATH=$PATH:$(pwd)/node_modules/.bin"
+        - cds build --production
+  after-all:
+    - builder: custom
+      commands:
+        - npm install
+modules:
+  - name: riskmanagement-srv
+    type: nodejs
+    path: gen/srv
+    parameters:
+      memory: 256MB
+    provides:
+      - name: srv-api
+        properties:
+          srv-url: ${default-url}
+    build-parameters:
+      builder: npm
+      ignore:
+        - node_modules
+        - package-lock.json
+    requires:
+      - name: riskmanagement-service-uaa
+      - name: riskmanagement-service-destination
+      - name: riskmanagement-service-metadata
+      - name: riskmanagement-service-logs
+      - name: riskmanagement-db
+  - name: riskmanagement
+    type: approuter.nodejs
+    path: app/router
+    parameters:
+      keep-existing-routes: true
+      disk-quota: 256M
+      memory: 256M
+    properties:
+      TENANT_HOST_PATTERN: ^(.*)-${default-uri}
+    requires:
+      - name: srv-api
+        group: destinations
+        properties:
+          name: srv-api
+          url: ~{srv-url}
+          forwardAuthToken: true
+      - name: mtx-api
+        group: destinations
+        properties:
+          name: mtx-api
+          url: ~{mtx-url}
+      - name: riskmanagement-service-uaa
+    provides:
+      - name: app-api
+        properties:
+          app-protocol: ${protocol}
+          app-uri: ${default-uri}
+  - name: riskmanagement-mtx
+    type: nodejs
+    path: gen/mtx/sidecar
+    requires:
+      - name: app-api
+        properties:
+          SUBSCRIPTION_URL: ~{app-protocol}://\${tenant_subdomain}-~{app-uri}
+          APP_PROTOCOL: ~{app-protocol}
+          APP_URI: ~{app-uri}
+          CF_API_DEST: ppsaasroute-cfapi
+      - name: riskmanagement-db
+      - name: riskmanagement-registry
+      - name: riskmanagement-service-uaa
+      - name: riskmanagement-service-destination
+    build-parameters:
+      builder: npm-ci
+    parameters:
+      memory: 256M
+      disk-quota: 512M
+    provides:
+      - name: mtx-api
+        properties:
+          mtx-url: ${default-url}
+resources:
+  - type: org.cloudfoundry.managed-service
+    name: riskmanagement-service-uaa
+    parameters:
+      service: xsuaa
+      service-plan: application
+      service-name: riskmanagement-uaa
+      path: xs-security.json
+      config:
+        oauth2-configuration:
+          redirect-uris:
+            - https://*.${default-domain}/login/*
+        xsappname: riskmanagement-${org}-${space}
+        role-collections:
+          - description: ''
+            name: riskmanagement-RiskViewer-${space}
+            role-template-references:
+              - $XSAPPNAME.RiskViewer
+          - description: ''
+            name: riskmanagement-RiskManager-${space}
+            role-template-references:
+              - $XSAPPNAME.RiskManager
+        tenant-mode: shared
+  - type: org.cloudfoundry.managed-service
+    name: riskmanagement-service-destination
+    parameters:
+      service: destination
+      service-plan: lite
+      service-name: riskmanagement-destination
+      config:
+        HTML5Runtime_enabled: true
+        version: 1.0.0
+        init_data:
+          instance:
+            existing_destinations_policy: ignore
+            destinations:
+              - Name: ppsaasroute-cfapi
+                Description: CF Cloud Controller API
+                URL: ${controller-url}
+                Type: HTTP
+                ProxyType: Internet
+                Authentication: OAuth2Password
+                tokenServiceURL: ${authorization-url}/oauth/token
+                clientId: cf
+  - type: org.cloudfoundry.user-provided-service
+    name: riskmanagement-service-metadata
+    parameters:
+      service: metadata
+      service-plan: standard
+      service-name: riskmanagement-metadata
+      config:
+        default-domain: ${default-domain}
+  - type: org.cloudfoundry.managed-service
+    name: riskmanagement-service-logs
+    parameters:
+      service: application-logs
+      service-plan: lite
+      service-name: riskmanagement-logs
+  - name: riskmanagement-db
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: service-manager
+      service-plan: container
+  - name: riskmanagement-registry
+    type: org.cloudfoundry.managed-service
+    requires:
+      - name: mtx-api
+    parameters:
+      service: saas-registry
+      service-plan: application
+      config:
+        xsappname: riskmanagement-${org}-${space}
+        appName: riskmanagement-${org}-${space}
+        displayName: riskmanagement
+        description: A simple CAP project.
+        category: Category
+        appUrls:
+          getDependencies: ~{mtx-api/mtx-url}/-/cds/saas-provisioning/dependencies
+          onSubscription: ~{mtx-api/mtx-url}/-/cds/saas-provisioning/tenant/{tenantId}
+          onSubscriptionAsync: true
+          onUnSubscriptionAsync: true
+          onUpdateDependenciesAsync: true
+          callbackTimeoutMillis: 300000
